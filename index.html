@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#050505">
+<title>Часы затмения</title>
+<style>
+  :root{
+    --bg:#050505;
+    --fg:#f4f2ee;
+    --dim:#8b8880;
+    --accent:#ffb454;
+    --line:#241f1a;
+  }
+  body.during{ --accent:#ff2d20; --line:#3a0d09; }
+  body.after { --accent:#6f8b9a; --line:#1a2126; }
+
+  *{box-sizing:border-box; margin:0; padding:0}
+  html,body{height:100%}
+  body{
+    background:var(--bg); color:var(--fg);
+    font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+    display:flex; flex-direction:column; min-height:100dvh;
+    overflow:hidden; -webkit-user-select:none; user-select:none;
+    transition:background .4s;
+  }
+  body.during{
+    background:radial-gradient(ellipse at center, #1a0503 0%, #050505 65%);
+  }
+
+  /* ---------- main readout ---------- */
+  main{
+    flex:1; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; gap:.4em;
+    padding:1rem; text-align:center; min-height:0;
+  }
+  .label{
+    font-size:clamp(.8rem,3.4vw,2.1rem);
+    letter-spacing:.22em; text-transform:uppercase;
+    color:var(--accent); font-weight:600;
+  }
+  body.during .label{ animation:pulse 1s steps(1,end) infinite; }
+  @keyframes pulse{ 0%,60%{opacity:1} 61%,100%{opacity:.35} }
+
+  .time{
+    font-size:clamp(3.2rem,20vw,20rem);
+    font-weight:700; line-height:.92;
+    font-variant-numeric:tabular-nums; letter-spacing:-.02em;
+    color:var(--accent);
+    text-shadow:0 0 .35em color-mix(in srgb, var(--accent) 35%, transparent);
+    white-space:nowrap;
+  }
+  .centis{ font-size:.36em; opacity:.6; letter-spacing:0 }
+
+  .bar{
+    width:min(88vw,900px); height:6px; background:var(--line);
+    border-radius:99px; overflow:hidden; opacity:0; transition:opacity .3s;
+  }
+  body.during .bar{ opacity:1 }
+  .bar > i{ display:block; height:100%; width:0; background:var(--accent) }
+
+  .sub{
+    font-size:clamp(.7rem,1.9vw,1.1rem); color:var(--dim);
+    letter-spacing:.08em; line-height:1.7;
+  }
+  .sub b{ color:var(--fg); font-weight:600 }
+
+  /* ---------- chrome ---------- */
+  footer{
+    display:flex; flex-wrap:wrap; gap:.5rem; align-items:center;
+    padding:.75rem 1rem calc(.75rem + env(safe-area-inset-bottom));
+    border-top:1px solid var(--line); font-size:.8rem; color:var(--dim);
+  }
+  footer .spacer{ flex:1 }
+  button, input, select{
+    font:inherit; font-size:.8rem; color:var(--fg);
+    background:#111; border:1px solid var(--line); border-radius:8px;
+    padding:.45em .8em; cursor:pointer;
+  }
+  button:hover{ border-color:var(--accent); color:var(--accent) }
+  input{ cursor:text; background:#0c0c0c }
+  input[type=number]{ width:6.5em }
+
+  .testbadge{
+    position:fixed; top:0; left:0; right:0; text-align:center;
+    background:#c9a227; color:#100c00; font-weight:700;
+    letter-spacing:.25em; font-size:.75rem; padding:.35em;
+    display:none; z-index:5;
+  }
+  body.test .testbadge{ display:block }
+
+  /* ---------- settings panel ---------- */
+  .panel{
+    position:fixed; inset:auto 0 0 0; z-index:10;
+    background:#0b0b0b; border-top:1px solid var(--line);
+    padding:1rem 1rem calc(1rem + env(safe-area-inset-bottom));
+    display:none; gap:1.25rem; flex-wrap:wrap;
+    max-height:80dvh; overflow:auto;
+  }
+  .panel.open{ display:flex }
+  .panel section{ min-width:min(100%,280px); flex:1 }
+  .panel h2{
+    font-size:.7rem; letter-spacing:.2em; text-transform:uppercase;
+    color:var(--accent); margin-bottom:.7rem; font-weight:600;
+  }
+  .row{ display:flex; gap:.4rem; align-items:center; margin-bottom:.5rem; flex-wrap:wrap }
+  .row label{ color:var(--dim); font-size:.75rem; min-width:5.5em }
+  .hint{ color:var(--dim); font-size:.7rem; line-height:1.6; margin-top:.5rem }
+  kbd{ background:#1a1a1a; border:1px solid var(--line); border-radius:4px; padding:0 .35em }
+</style>
+</head>
+<body>
+
+<div class="testbadge">тестовый режим</div>
+
+<main>
+  <div class="label" id="label">до начала затмения</div>
+  <div class="time"><span id="digits">--:--</span><span class="centis" id="centis">.00</span></div>
+  <div class="bar"><i id="progress"></i></div>
+  <div class="sub">
+    <div>Начало <b id="sStart">—</b> · Конец <b id="sEnd">—</b> · Длительность <b id="sDur">—</b></div>
+    <div>Сейчас <b id="sNow">—</b><span id="sOffset"></span></div>
+  </div>
+</main>
+
+<footer>
+  <button id="btnSettings">Настройки</button>
+  <button id="btnSound">🔇 Звук</button>
+  <button id="btnFull">Полный экран</button>
+  <div class="spacer"></div>
+  <button id="btnTest">▶ Тест</button>
+</footer>
+
+<div class="panel" id="panel">
+  <section>
+    <h2>Время затмения</h2>
+    <div class="row"><label>Дата</label><input type="date" id="inDate"></div>
+    <div class="row"><label>Начало</label><input type="time" id="inStart" step="1"></div>
+    <div class="row"><label>Конец</label><input type="time" id="inEnd" step="1"></div>
+    <div class="hint">Местное время устройства. Если конец раньше начала — считается следующими сутками.</div>
+  </section>
+
+  <section>
+    <h2>Точность часов</h2>
+    <div class="row">
+      <label>Поправка</label>
+      <input type="number" id="inOffset" step="10"> <span style="color:var(--dim)">мс</span>
+    </div>
+    <div class="row">
+      <button data-adj="-1000">−1с</button>
+      <button data-adj="-100">−0.1с</button>
+      <button data-adj="100">+0.1с</button>
+      <button data-adj="1000">+1с</button>
+      <button data-adj="0">Сброс</button>
+    </div>
+    <div class="row"><button id="btnTap">⏱ Синхр. по сигналу точного времени</button></div>
+    <div class="hint">
+      Отсчёт идёт по монотонному таймеру (<code>performance.now()</code>), поэтому не «дёргается»
+      от подстройки системных часов. Поправка прибавляется к системному времени —
+      нажмите «Синхр.» ровно в момент сигнала точного времени, и часы подтянутся к ближайшей целой секунде.
+    </div>
+  </section>
+
+  <section>
+    <h2>Тест</h2>
+    <div class="row">
+      <label>Старт через</label><input type="number" id="inTestDelay" value="10" min="1"> <span style="color:var(--dim)">сек</span>
+    </div>
+    <div class="row">
+      <button id="btnTestRun">Запустить тест</button>
+      <button id="btnTestStop">Вернуть реальное время</button>
+    </div>
+    <div class="hint">
+      Тест сдвигает затмение на «сейчас + N секунд», сохраняя реальную длительность.
+      Настоящие настройки не меняются. Ссылка вида <code>?test=10</code> запускает тест сразу.
+    </div>
+    <div class="hint">
+      Клавиши: <kbd>T</kbd> тест · <kbd>S</kbd> звук · <kbd>F</kbd> полный экран · <kbd>C</kbd> настройки · <kbd>Esc</kbd> закрыть
+    </div>
+    <div class="row" style="margin-top:.75rem"><button id="btnClose">Закрыть</button></div>
+  </section>
+</div>
+
+<script>
+'use strict';
+
+/* ------------------------------------------------------------------ *
+ *  Часы точного времени
+ *  Date.now() может прыгать при NTP-подстройке, поэтому основной ход
+ *  берём у монотонного performance.now(), а к стенным часам
+ *  переякориваемся только при расхождении больше 250 мс.
+ * ------------------------------------------------------------------ */
+let anchorWall = Date.now();
+let anchorPerf = performance.now();
+
+function rawNow(){
+  const mono = anchorWall + (performance.now() - anchorPerf);
+  const wall = Date.now();
+  if (Math.abs(wall - mono) > 250){       // системные часы реально переставили
+    anchorWall = wall;
+    anchorPerf = performance.now();
+    return wall;
+  }
+  return mono;
+}
+const now = () => rawNow() + cfg.offset;
+
+/* ------------------------------------------------------------------ *
+ *  Настройки
+ * ------------------------------------------------------------------ */
+const DEFAULTS = { date:'2026-08-12', start:'20:28:28', end:'20:30:16', offset:0, sound:false };
+const KEY = 'eclipse-clock/v1';
+
+let cfg = load();
+let test = null;              // {start,end} — активный тест или null
+
+function load(){
+  try { return Object.assign({}, DEFAULTS, JSON.parse(localStorage.getItem(KEY) || '{}')); }
+  catch { return Object.assign({}, DEFAULTS); }
+}
+function save(){
+  try { localStorage.setItem(KEY, JSON.stringify(cfg)); } catch {}
+}
+
+/** "20:28:28" + "2026-08-12" -> timestamp в местном времени */
+function stamp(dateStr, timeStr){
+  const [y,m,d]  = dateStr.split('-').map(Number);
+  const [hh,mm,ss=0] = timeStr.split(':').map(Number);
+  return new Date(y, m-1, d, hh, mm, ss, 0).getTime();
+}
+
+/** Настоящие границы затмения из настроек */
+function realWindow(){
+  const start = stamp(cfg.date, cfg.start);
+  let   end   = stamp(cfg.date, cfg.end);
+  if (end <= start) end += 86400000;      // конец за полночь
+  return { start, end };
+}
+/** Актуальные границы — тестовые, если идёт тест */
+const window_ = () => test || realWindow();
+
+/* ------------------------------------------------------------------ *
+ *  Форматирование
+ * ------------------------------------------------------------------ */
+const p2 = n => String(n).padStart(2,'0');
+
+function splitMs(ms){
+  ms = Math.max(0, ms);
+  return {
+    h: Math.floor(ms/3600000),
+    m: Math.floor(ms/60000) % 60,
+    s: Math.floor(ms/1000) % 60,
+    c: Math.floor((ms % 1000)/10),
+  };
+}
+function fmtCountdown(ms){
+  const t = splitMs(ms);
+  return t.h > 0 ? `${t.h}:${p2(t.m)}:${p2(t.s)}` : `${p2(t.m)}:${p2(t.s)}`;
+}
+function fmtClock(ts, withCentis){
+  const d = new Date(ts);
+  const base = `${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}`;
+  return withCentis ? `${base}.${p2(Math.floor(d.getMilliseconds()/10))}` : base;
+}
+
+/* ------------------------------------------------------------------ *
+ *  Звук — WebAudio, без файлов, работает офлайн
+ * ------------------------------------------------------------------ */
+let audio = null;
+function beep(freq, dur, gain){
+  if (!cfg.sound) return;
+  try {
+    audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+    if (audio.state === 'suspended') audio.resume();
+    const t = audio.currentTime;
+    const osc = audio.createOscillator(), g = audio.createGain();
+    osc.frequency.value = freq; osc.type = 'sine';
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(gain, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    osc.connect(g).connect(audio.destination);
+    osc.start(t); osc.stop(t + dur + 0.02);
+  } catch {}
+}
+
+let lastCue = null;                       // чтобы сигнал не повторялся в том же кадре
+function cue(id, fn){ if (lastCue !== id){ lastCue = id; fn(); } }
+
+/* ------------------------------------------------------------------ *
+ *  Главный цикл
+ * ------------------------------------------------------------------ */
+const el = id => document.getElementById(id);
+const ui = {
+  label:el('label'), digits:el('digits'), centis:el('centis'),
+  progress:el('progress'), sStart:el('sStart'), sEnd:el('sEnd'),
+  sDur:el('sDur'), sNow:el('sNow'), sOffset:el('sOffset'),
+};
+let phase = null;
+
+function tick(){
+  const t = now();
+  const { start, end } = window_();
+
+  const next = t < start ? 'before' : (t < end ? 'during' : 'after');
+  if (next !== phase){
+    phase = next;
+    document.body.classList.remove('before','during','after');
+    document.body.classList.add(phase);
+    if (phase === 'during'){ beep(880, 1.2, 0.3); lastCue = 'start'; }
+    if (phase === 'after') { beep(330, 0.9, 0.25); lastCue = 'end'; }
+  }
+
+  let remain, label;
+  if (phase === 'before'){
+    remain = start - t;
+    label  = 'до начала затмения';
+    const secLeft = Math.ceil(remain/1000);
+    if (secLeft <= 10 && secLeft > 0) cue('c'+secLeft, () => beep(660, 0.09, 0.22));
+    else if (secLeft === 60 || secLeft === 30) cue('c'+secLeft, () => beep(520, 0.25, 0.2));
+  } else if (phase === 'during'){
+    remain = end - t;
+    label  = '⚫ затмение идёт · до конца';
+    ui.progress.style.width = (100 * (t - start) / (end - start)) + '%';
+    const secLeft = Math.ceil(remain/1000);
+    if (secLeft <= 10 && secLeft > 0) cue('e'+secLeft, () => beep(440, 0.09, 0.22));
+  } else {
+    remain = 0;
+    label  = 'затмение завершено';
+  }
+
+  const txt = fmtCountdown(remain);
+  const cs  = '.' + p2(splitMs(remain).c);
+  if (ui.digits.textContent !== txt) ui.digits.textContent = txt;
+  ui.centis.textContent = cs;
+  if (ui.label.textContent !== label) ui.label.textContent = label;
+
+  ui.sNow.textContent = fmtClock(t, true);
+
+  const title = phase === 'during' ? `⚫ ${txt} до конца`
+              : phase === 'before' ? `${txt} до затмения`
+              : 'Затмение завершено';
+  if (document.title !== title) document.title = title;
+
+  requestAnimationFrame(tick);
+}
+
+function refreshStatic(){
+  const { start, end } = window_();
+  ui.sStart.textContent = fmtClock(start);
+  ui.sEnd.textContent   = fmtClock(end);
+  ui.sDur.textContent   = fmtCountdown(end - start);
+  ui.sOffset.textContent = cfg.offset ? `  (поправка ${cfg.offset > 0 ? '+' : ''}${(cfg.offset/1000).toFixed(2)} с)` : '';
+  document.body.classList.toggle('test', !!test);
+  phase = null;                            // пересчитать фазу в ближайшем кадре
+}
+
+/* ------------------------------------------------------------------ *
+ *  Управление
+ * ------------------------------------------------------------------ */
+const panel = el('panel');
+el('btnSettings').onclick = () => panel.classList.toggle('open');
+el('btnClose').onclick    = () => panel.classList.remove('open');
+
+el('btnSound').onclick = e => {
+  cfg.sound = !cfg.sound; save();
+  e.target.textContent = (cfg.sound ? '🔊' : '🔇') + ' Звук';
+  if (cfg.sound) beep(880, 0.12, 0.2);   // жест пользователя разблокирует WebAudio
+};
+
+el('btnFull').onclick = () => {
+  if (document.fullscreenElement) document.exitFullscreen();
+  else document.documentElement.requestFullscreen?.();
+};
+
+// поля времени
+const bind = (id, key) => {
+  const input = el(id);
+  input.value = cfg[key];
+  input.onchange = () => {
+    if (!input.value) { input.value = cfg[key]; return; }
+    cfg[key] = input.value; save(); refreshStatic();
+  };
+};
+bind('inDate','date'); bind('inStart','start'); bind('inEnd','end');
+
+// поправка часов
+const inOffset = el('inOffset');
+inOffset.value = cfg.offset;
+inOffset.onchange = () => { cfg.offset = Number(inOffset.value) || 0; save(); refreshStatic(); };
+document.querySelectorAll('[data-adj]').forEach(b => b.onclick = () => {
+  const adj = Number(b.dataset.adj);
+  cfg.offset = adj === 0 ? 0 : cfg.offset + adj;
+  inOffset.value = cfg.offset; save(); refreshStatic();
+});
+
+// синхронизация «по сигналу»: нажатие приходится на целую секунду
+el('btnTap').onclick = () => {
+  const t = now();
+  const frac = ((t % 1000) + 1000) % 1000;
+  cfg.offset += (frac < 500 ? -frac : 1000 - frac);
+  inOffset.value = cfg.offset; save(); refreshStatic();
+  beep(1000, 0.08, 0.2);
+};
+
+// тест
+function startTest(delaySec){
+  const { start, end } = realWindow();     // длительность всегда берём настоящую
+  const dur = Math.max(1000, end - start);
+  const s = now() + delaySec * 1000;
+  test = { start:s, end:s + dur };
+  refreshStatic();
+}
+function stopTest(){ test = null; refreshStatic(); }
+
+el('btnTestRun').onclick  = () => { startTest(Math.max(1, Number(el('inTestDelay').value) || 10)); panel.classList.remove('open'); };
+el('btnTestStop').onclick = stopTest;
+el('btnTest').onclick     = () => test ? stopTest() : startTest(Math.max(1, Number(el('inTestDelay').value) || 10));
+
+document.onkeydown = e => {
+  if (e.target.tagName === 'INPUT') return;
+  const k = e.key.toLowerCase();
+  if (k === 't') el('btnTest').click();
+  else if (k === 's') el('btnSound').click();
+  else if (k === 'f') el('btnFull').click();
+  else if (k === 'c') panel.classList.toggle('open');
+  else if (k === 'escape') panel.classList.remove('open');
+};
+
+// не давать экрану гаснуть
+let wakeLock = null;
+async function keepAwake(){
+  try { wakeLock = await navigator.wakeLock?.request('screen'); } catch {}
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible'){
+    anchorWall = Date.now(); anchorPerf = performance.now();   // переякорить после сна
+    keepAwake();
+  }
+});
+document.body.addEventListener('click', keepAwake, { once:true });
+
+// ?test=10 — сразу тестовый прогон
+const qTest = new URLSearchParams(location.search).get('test');
+if (qTest !== null) startTest(Math.max(1, Number(qTest) || 10));
+
+el('btnSound').textContent = (cfg.sound ? '🔊' : '🔇') + ' Звук';
+refreshStatic();
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>
