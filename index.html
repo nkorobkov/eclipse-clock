@@ -163,6 +163,26 @@
   </section>
 
   <section>
+    <h2>Ссылка для друзей</h2>
+    <div class="row">
+      <select id="inShareMode">
+        <option value="abs">Тот же момент везде</option>
+        <option value="local">Местное время получателя</option>
+      </select>
+      <button id="btnCopy">Копировать</button>
+    </div>
+    <div class="row"><input type="text" id="inShare" readonly style="flex:1; min-width:0"></div>
+    <div class="hint" id="linkNote"></div>
+    <div class="hint">
+      <b style="color:var(--fg)">Тот же момент везде</b> — время зашито в UTC: у друга в другом часовом
+      поясе отсчёт кончится ровно в ту же секунду, что и у вас. Это то, что нужно, если вы смотрите
+      затмение из одного места.<br>
+      <b style="color:var(--fg)">Местное время получателя</b> — в ссылке просто «20:28:28»,
+      и каждый ждёт этого времени по своим часам.
+    </div>
+  </section>
+
+  <section>
     <h2>Тест</h2>
     <div class="row">
       <label>Старт через</label><input type="number" id="inTestDelay" value="10" min="1"> <span style="color:var(--dim)">сек</span>
@@ -209,7 +229,7 @@ const now = () => rawNow() + cfg.offset;
 /* ------------------------------------------------------------------ *
  *  Настройки
  * ------------------------------------------------------------------ */
-const DEFAULTS = { date:'2026-08-12', start:'20:28:28', end:'20:30:16', offset:0, sound:false };
+const DEFAULTS = { date:'2026-08-12', start:'20:28:28', end:'20:30:16', offset:0, sound:false, shareMode:'abs' };
 const KEY = 'eclipse-clock/v1';
 
 let cfg = load();
@@ -239,6 +259,62 @@ function realWindow(){
 }
 /** Актуальные границы — тестовые, если идёт тест */
 const window_ = () => test || realWindow();
+
+/* ------------------------------------------------------------------ *
+ *  Время в ссылке
+ *  ?start=2026-08-12T18:28:28Z&end=...          — абсолютный момент
+ *  ?date=2026-08-12&start=20:28:28&end=20:30:16 — местное время
+ * ------------------------------------------------------------------ */
+const dateStrOf = ts => { const d = new Date(ts); return `${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())}`; };
+const timeStrOf = ts => { const d = new Date(ts); return `${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}`; };
+
+/** Разбирает значение из ссылки в момент времени */
+function parseMoment(v, dateHint){
+  if (v == null) return NaN;
+  v = String(v).trim();
+  if (/^\d{10}$/.test(v)) return Number(v) * 1000;               // epoch, секунды
+  if (/^\d{13}$/.test(v)) return Number(v);                      // epoch, миллисекунды
+  if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(v))                        // только время → местное
+    return stamp(dateHint || dateStrOf(Date.now()), v);
+  if (v.includes('T')) v = v.replace(/\s(\d{2}:?\d{2})$/, '+$1'); // «+» из ссылки приходит пробелом
+  const iso = v.replace(' ', 'T').replace(/([+-]\d{2})(\d{2})$/, '$1:$2');
+  const t = Date.parse(iso);                                     // без зоны → местное (по спецификации)
+  return Number.isFinite(t) ? t : NaN;
+}
+
+function params(){
+  const hash = location.hash.replace(/^#/, '');
+  return new URLSearchParams(location.search.replace(/^\?/, '') + (hash ? '&' + hash : ''));
+}
+
+let fromLink = false;
+
+/** Время из ссылки перекрывает сохранённое и пересчитывается в местное время зрителя */
+function applyUrlTimes(){
+  const q = params();
+  const s = q.get('start') ?? q.get('s');
+  const e = q.get('end')   ?? q.get('e');
+  if (s == null || e == null) return;
+
+  const hint = q.get('date') || q.get('d');
+  const ts = parseMoment(s, hint);
+  const te = parseMoment(e, hint || (Number.isFinite(ts) ? dateStrOf(ts) : null));
+  if (!Number.isFinite(ts) || !Number.isFinite(te)) return;
+
+  cfg.date  = dateStrOf(ts);
+  cfg.start = timeStrOf(ts);
+  cfg.end   = timeStrOf(te);                 // если раньше начала — realWindow() перенесёт на сутки вперёд
+  fromLink  = true;
+  save();
+}
+
+function shareUrl(mode){
+  const base = location.href.split(/[?#]/)[0];
+  if (mode === 'local') return `${base}?date=${cfg.date}&start=${cfg.start}&end=${cfg.end}`;
+  const { start, end } = realWindow();
+  const utc = ts => new Date(ts - (ts % 1000)).toISOString().replace('.000', '');
+  return `${base}?start=${utc(start)}&end=${utc(end)}`;
+}
 
 /* ------------------------------------------------------------------ *
  *  Форматирование
@@ -353,6 +429,12 @@ function refreshStatic(){
   ui.sOffset.textContent = cfg.offset ? `  (поправка ${cfg.offset > 0 ? '+' : ''}${(cfg.offset/1000).toFixed(2)} с)` : '';
   document.body.classList.toggle('test', !!test);
   phase = null;                            // пересчитать фазу в ближайшем кадре
+
+  const link = shareUrl(cfg.shareMode);
+  el('inShare').value = link;
+  if (location.protocol !== 'file:'){      // адресная строка = готовая ссылка для друзей
+    try { history.replaceState(null, '', link); } catch {}
+  }
 }
 
 /* ------------------------------------------------------------------ *
@@ -372,6 +454,25 @@ el('btnFull').onclick = () => {
   if (document.fullscreenElement) document.exitFullscreen();
   else document.documentElement.requestFullscreen?.();
 };
+
+applyUrlTimes();                           // до того, как поля заполнятся из cfg
+
+// ссылка для друзей
+const inShareMode = el('inShareMode');
+inShareMode.value = cfg.shareMode;
+inShareMode.onchange = () => { cfg.shareMode = inShareMode.value; save(); refreshStatic(); };
+
+el('btnCopy').onclick = async () => {
+  const input = el('inShare'), btn = el('btnCopy');
+  input.select(); input.setSelectionRange(0, 9999);
+  try { await navigator.clipboard.writeText(input.value); }
+  catch { try { document.execCommand('copy'); } catch {} }
+  btn.textContent = 'Скопировано ✓';
+  setTimeout(() => btn.textContent = 'Копировать', 1500);
+};
+
+if (fromLink) el('linkNote').innerHTML =
+  '⤴ Время взято из ссылки и показано по часам вашего устройства.';
 
 // поля времени
 const bind = (id, key) => {
@@ -441,7 +542,7 @@ document.addEventListener('visibilitychange', () => {
 document.body.addEventListener('click', keepAwake, { once:true });
 
 // ?test=10 — сразу тестовый прогон
-const qTest = new URLSearchParams(location.search).get('test');
+const qTest = params().get('test');
 if (qTest !== null) startTest(Math.max(1, Number(qTest) || 10));
 
 el('btnSound').textContent = (cfg.sound ? '🔊' : '🔇') + ' Звук';
