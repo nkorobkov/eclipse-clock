@@ -43,6 +43,7 @@
   body.during .label{ animation:pulse 1s steps(1,end) infinite; }
   @keyframes pulse{ 0%,60%{opacity:1} 61%,100%{opacity:.35} }
 
+  .time.long{ font-size:clamp(1.8rem,8vw,8rem) }   /* строка с днями заметно длиннее */
   .time{
     font-size:clamp(3.2rem,20vw,20rem);
     font-weight:700; line-height:.92;
@@ -108,6 +109,31 @@
   .row label{ color:var(--dim); font-size:.75rem; min-width:5.5em }
   .hint{ color:var(--dim); font-size:.7rem; line-height:1.6; margin-top:.5rem }
   kbd{ background:#1a1a1a; border:1px solid var(--line); border-radius:4px; padding:0 .35em }
+  a{ color:var(--accent) }
+
+  /* ---------- первый запуск ---------- */
+  .setup{
+    --accent:#ffb454;                      /* окно настройки не красим фазой затмения */
+    position:fixed; inset:0; z-index:20; display:none;
+    align-items:center; justify-content:center; overflow:auto;
+    padding:1rem; background:rgba(5,5,5,.97);
+  }
+  .setup.open{ display:flex }
+  .setup .card{
+    width:min(100%,430px); background:#0b0b0b;
+    border:1px solid var(--line); border-radius:14px; padding:1.4rem;
+  }
+  .setup h1{ font-size:1.3rem; font-weight:700; color:var(--accent); margin-bottom:.5rem }
+  .setup .lead{ color:var(--dim); font-size:.85rem; line-height:1.6; margin-bottom:1.1rem }
+  .setup .row label{ min-width:7.5em }
+  .setup input, .setup select{ flex:1; min-width:0 }
+  .setup .warn{ color:#ff6a5c; font-size:.75rem; margin-top:.6rem; display:none }
+  .setup .warn.show{ display:block }
+  button.primary{
+    width:100%; margin-top:1rem; padding:.7em;
+    background:var(--accent); color:#0d0a06; border-color:var(--accent); font-weight:700;
+  }
+  button.primary:hover{ color:#0d0a06; filter:brightness(1.12) }
 </style>
 </head>
 <body>
@@ -120,7 +146,7 @@
   <div class="bar"><i id="progress"></i></div>
   <div class="sub">
     <div>Начало <b id="sStart">—</b> · Конец <b id="sEnd">—</b> · Длительность <b id="sDur">—</b></div>
-    <div>Сейчас <b id="sNow">—</b></div>
+    <div>Сейчас <b id="sNow">—</b> · <b id="sTz">—</b></div>
   </div>
 </main>
 
@@ -138,30 +164,25 @@
     <div class="row"><label>Дата</label><input type="date" id="inDate"></div>
     <div class="row"><label>Начало</label><input type="time" id="inStart" step="1"></div>
     <div class="row"><label>Конец</label><input type="time" id="inEnd" step="1"></div>
+    <div class="row"><label>Пояс</label><select id="inTz" style="flex:1; min-width:0"></select></div>
     <div class="hint">
-      Местное время устройства. Если конец раньше начала — считается следующими сутками.
-      Отсчёт идёт по монотонному таймеру (<code>performance.now()</code>), поэтому не «дёргается»,
-      когда система подстраивает часы по NTP.
+      Время трактуется в выбранном поясе и в нём же показывается. Если конец раньше начала —
+      считается следующими сутками. Отсчёт идёт по монотонному таймеру
+      (<code>performance.now()</code>), поэтому не «дёргается», когда система подстраивает часы по NTP.
     </div>
   </section>
 
   <section>
-    <h2>Ссылка для друзей</h2>
+    <h2>Ссылка</h2>
     <div class="row">
-      <select id="inShareMode">
-        <option value="abs">Тот же момент везде</option>
-        <option value="local">Местное время получателя</option>
-      </select>
+      <input type="text" id="inShare" readonly style="flex:1; min-width:0">
       <button id="btnCopy">Копировать</button>
     </div>
-    <div class="row"><input type="text" id="inShare" readonly style="flex:1; min-width:0"></div>
     <div class="hint" id="linkNote"></div>
     <div class="hint">
-      <b style="color:var(--fg)">Тот же момент везде</b> — время зашито в UTC: у друга в другом часовом
-      поясе отсчёт кончится ровно в ту же секунду, что и у вас. Это то, что нужно, если вы смотрите
-      затмение из одного места.<br>
-      <b style="color:var(--fg)">Местное время получателя</b> — в ссылке просто «20:28:28»,
-      и каждый ждёт этого времени по своим часам.
+      Время зашито в ссылку в UTC, поэтому отсчёт кончится в одну и ту же секунду
+      у всех, кто её откроет, в каком бы часовом поясе они ни были.
+      Адресная строка всегда содержит актуальную ссылку — её можно копировать прямо оттуда.
     </div>
   </section>
 
@@ -183,6 +204,31 @@
     </div>
     <div class="row" style="margin-top:.75rem"><button id="btnClose">Закрыть</button></div>
   </section>
+</div>
+
+<div class="setup" id="setup">
+  <div class="card">
+    <h1>Когда затмение?</h1>
+    <p class="lead">
+      Укажите начало и конец полной фазы для той точки, откуда вы будете смотреть.
+    </p>
+    <div class="row"><label>Дата</label><input type="date" id="inSetupDate"></div>
+    <div class="row"><label>Начало</label><input type="time" id="inSetupStart" step="1"></div>
+    <div class="row"><label>Конец</label><input type="time" id="inSetupEnd" step="1"></div>
+    <div class="row"><label>Часовой пояс</label><select id="inSetupTz"></select></div>
+    <div class="warn" id="setupWarn"></div>
+    <button class="primary" id="btnSetupGo">Начать отсчёт</button>
+    <p class="hint">
+      Не знаете точное время? Найдите его для своего города на
+      <a href="https://eclipsefan.org/" target="_blank" rel="noopener noreferrer">eclipsefan.org</a> —
+      контактные времена отличаются на минуты даже у соседних городов, так что берите их именно
+      для места наблюдения.
+    </p>
+    <p class="hint">
+      Время сохранится в браузере: в следующий раз страница откроется уже настроенной,
+      даже без параметров в ссылке. Изменить его можно в «Настройках».
+    </p>
+  </div>
 </div>
 
 <script>
@@ -211,25 +257,73 @@ function now(){
 /* ------------------------------------------------------------------ *
  *  Настройки
  * ------------------------------------------------------------------ */
-const DEFAULTS = { date:'2026-08-12', start:'20:28:28', end:'20:30:16', sound:false, shareMode:'abs' };
+const DEFAULTS = {
+  date:'2026-08-12', start:'20:28:28', end:'20:30:16',
+  tz:'local',                 // 'local' или смещение в минутах: 120 = UTC+2
+  sound:false, configured:false,
+};
 const KEY = 'eclipse-clock/v1';
 
 let cfg = load();
 let test = null;              // {start,end} — активный тест или null
 
 function load(){
-  try { return Object.assign({}, DEFAULTS, JSON.parse(localStorage.getItem(KEY) || '{}')); }
-  catch { return Object.assign({}, DEFAULTS); }
+  try {
+    const saved = JSON.parse(localStorage.getItem(KEY) || 'null');
+    const c = Object.assign({}, DEFAULTS, saved || {});
+    if (saved && saved.configured === undefined) c.configured = true;  // настройки прежней версии
+    return c;
+  } catch { return Object.assign({}, DEFAULTS); }
 }
 function save(){
   try { localStorage.setItem(KEY, JSON.stringify(cfg)); } catch {}
 }
 
-/** "20:28:28" + "2026-08-12" -> timestamp в местном времени */
+/* ------------------------------------------------------------------ *
+ *  Часовой пояс
+ *  Внутри всё считается в абсолютных метках времени; пояс влияет только
+ *  на то, как «20:28:28» превращается в метку и как метка показывается.
+ * ------------------------------------------------------------------ */
+const ZONES = [
+  [-720,'Бейкер'],       [-660,'Паго-Паго'],   [-600,'Гонолулу'],   [-570,'Маркизские о-ва'],
+  [-540,'Анкоридж'],     [-480,'Лос-Анджелес'],[-420,'Денвер'],     [-360,'Мехико'],
+  [-300,'Нью-Йорк'],     [-240,'Сантьяго'],    [-210,'Сент-Джонс'], [-180,'Сан-Паулу'],
+  [-120,'Южн. Георгия'], [-60,'Азорские о-ва'],[0,'Лондон, Рейкьявик'],
+  [60,'Берлин, Мадрид'], [120,'Афины, Каир'],  [180,'Москва'],      [210,'Тегеран'],
+  [240,'Дубай'],         [270,'Кабул'],        [300,'Ташкент'],     [330,'Дели'],
+  [345,'Катманду'],      [360,'Алматы'],       [390,'Янгон'],       [420,'Бангкок'],
+  [480,'Сингапур, Пекин'],[525,'Юкла'],        [540,'Токио'],       [570,'Аделаида'],
+  [600,'Сидней'],        [630,'Лорд-Хау'],     [660,'Нумеа'],       [720,'Окленд'],
+  [765,'Чатем'],         [780,'Нукуалофа'],    [840,'Киритимати'],
+];
+
+const localOffset = ts => -new Date(ts).getTimezoneOffset();
+/** Смещение выбранного пояса в минутах на момент ts */
+const tzOffset = ts => cfg.tz === 'local' ? localOffset(ts ?? Date.now()) : Number(cfg.tz);
+
+function tzName(min){
+  const a = Math.abs(min), h = Math.floor(a/60), m = a % 60;
+  return `UTC${min === 0 ? '±' : (min < 0 ? '−' : '+')}${h}${m ? ':' + p2(m) : ''}`;
+}
+
+/** Компоненты метки времени в выбранном поясе */
+function parts(ts){
+  if (cfg.tz === 'local'){
+    const d = new Date(ts);
+    return { y:d.getFullYear(), mo:d.getMonth()+1, d:d.getDate(),
+             h:d.getHours(), mi:d.getMinutes(), s:d.getSeconds(), ms:d.getMilliseconds() };
+  }
+  const d = new Date(ts + Number(cfg.tz) * 60000);
+  return { y:d.getUTCFullYear(), mo:d.getUTCMonth()+1, d:d.getUTCDate(),
+           h:d.getUTCHours(), mi:d.getUTCMinutes(), s:d.getUTCSeconds(), ms:d.getUTCMilliseconds() };
+}
+
+/** "2026-08-12" + "20:28:28" -> метка времени, обратная parts() */
 function stamp(dateStr, timeStr){
-  const [y,m,d]  = dateStr.split('-').map(Number);
+  const [y,m,d]      = dateStr.split('-').map(Number);
   const [hh,mm,ss=0] = timeStr.split(':').map(Number);
-  return new Date(y, m-1, d, hh, mm, ss, 0).getTime();
+  if (cfg.tz === 'local') return new Date(y, m-1, d, hh, mm, ss, 0).getTime();
+  return Date.UTC(y, m-1, d, hh, mm, ss, 0) - Number(cfg.tz) * 60000;
 }
 
 /** Настоящие границы затмения из настроек */
@@ -244,11 +338,20 @@ const window_ = () => test || realWindow();
 
 /* ------------------------------------------------------------------ *
  *  Время в ссылке
- *  ?start=2026-08-12T18:28:28Z&end=...          — абсолютный момент
- *  ?date=2026-08-12&start=20:28:28&end=20:30:16 — местное время
+ *  ?start=2026-08-12T18:28:28Z&end=...&tz=120   — абсолютный момент
+ *  ?date=2026-08-12&start=20:28:28&end=20:30:16 — время в выбранном поясе
  * ------------------------------------------------------------------ */
-const dateStrOf = ts => { const d = new Date(ts); return `${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())}`; };
-const timeStrOf = ts => { const d = new Date(ts); return `${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}`; };
+const dateStrOf = ts => { const p = parts(ts); return `${p.y}-${p2(p.mo)}-${p2(p.d)}`; };
+const timeStrOf = ts => { const p = parts(ts); return `${p2(p.h)}:${p2(p.mi)}:${p2(p.s)}`; };
+
+/** tz=120 (минуты) или tz=2 (часы) или tz=local */
+function parseTz(v){
+  if (v == null || v === '') return null;
+  if (v === 'local') return 'local';
+  const n = Number(v);
+  if (!Number.isFinite(n)) return null;
+  return Math.abs(n) <= 14 ? Math.round(n * 60) : Math.round(n);   // до ±14 считаем часами
+}
 
 /** Разбирает значение из ссылки в момент времени */
 function parseMoment(v, dateHint){
@@ -271,12 +374,15 @@ function params(){
 
 let fromLink = false;
 
-/** Время из ссылки перекрывает сохранённое и пересчитывается в местное время зрителя */
+/** Время из ссылки перекрывает сохранённое и считается настройкой */
 function applyUrlTimes(){
   const q = params();
   const s = q.get('start') ?? q.get('s');
   const e = q.get('end')   ?? q.get('e');
   if (s == null || e == null) return;
+
+  const tz = parseTz(q.get('tz'));
+  if (tz !== null) cfg.tz = tz;              // до разбора: влияет на трактовку «голого» времени
 
   const hint = q.get('date') || q.get('d');
   const ts = parseMoment(s, hint);
@@ -286,16 +392,18 @@ function applyUrlTimes(){
   cfg.date  = dateStrOf(ts);
   cfg.start = timeStrOf(ts);
   cfg.end   = timeStrOf(te);                 // если раньше начала — realWindow() перенесёт на сутки вперёд
+  cfg.configured = true;
   fromLink  = true;
   save();
 }
 
-function shareUrl(mode){
+/** Один формат ссылки: абсолютный момент в UTC (+ пояс показа, если задан явно) */
+function shareUrl(){
   const base = location.href.split(/[?#]/)[0];
-  if (mode === 'local') return `${base}?date=${cfg.date}&start=${cfg.start}&end=${cfg.end}`;
   const { start, end } = realWindow();
   const utc = ts => new Date(ts - (ts % 1000)).toISOString().replace('.000', '');
-  return `${base}?start=${utc(start)}&end=${utc(end)}`;
+  const tz  = cfg.tz === 'local' ? '' : `&tz=${cfg.tz}`;
+  return `${base}?start=${utc(start)}&end=${utc(end)}${tz}`;
 }
 
 /* ------------------------------------------------------------------ *
@@ -312,14 +420,36 @@ function splitMs(ms){
     c: Math.floor((ms % 1000)/10),
   };
 }
+/** Русское склонение: 2 дня, 5 дней, 21 день */
+function plural(n, one, few, many){
+  const t = n % 10, h = n % 100;
+  if (t === 1 && h !== 11) return one;
+  if (t >= 2 && t <= 4 && (h < 12 || h > 14)) return few;
+  return many;
+}
+
+const DAYS_FROM = 48 * 3600000;           // с этого порога показываем дни
+
 function fmtCountdown(ms){
   const t = splitMs(ms);
+  if (ms >= DAYS_FROM){
+    const d = Math.floor(ms / 86400000);
+    return `${d} ${plural(d,'день','дня','дней')} ${p2(t.h - d*24)}:${p2(t.m)}:${p2(t.s)}`;
+  }
   return t.h > 0 ? `${t.h}:${p2(t.m)}:${p2(t.s)}` : `${p2(t.m)}:${p2(t.s)}`;
 }
+
 function fmtClock(ts, withCentis){
-  const d = new Date(ts);
-  const base = `${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}`;
-  return withCentis ? `${base}.${p2(Math.floor(d.getMilliseconds()/10))}` : base;
+  const p = parts(ts);
+  const base = `${p2(p.h)}:${p2(p.mi)}:${p2(p.s)}`;
+  return withCentis ? `${base}.${p2(Math.floor(p.ms/10))}` : base;
+}
+
+/** Дата рядом со временем, если затмение не сегодня */
+function fmtDayHint(ts){
+  const a = parts(ts), b = parts(now());
+  if (a.y === b.y && a.mo === b.mo && a.d === b.d) return '';
+  return ` ${p2(a.d)}.${p2(a.mo)}`;
 }
 
 /* ------------------------------------------------------------------ *
@@ -351,8 +481,9 @@ function cue(id, fn){ if (lastCue !== id){ lastCue = id; fn(); } }
 const el = id => document.getElementById(id);
 const ui = {
   label:el('label'), digits:el('digits'), centis:el('centis'),
+  time:document.querySelector('.time'),
   progress:el('progress'), sStart:el('sStart'), sEnd:el('sEnd'),
-  sDur:el('sDur'), sNow:el('sNow'),
+  sDur:el('sDur'), sNow:el('sNow'), sTz:el('sTz'),
 };
 let phase = null;
 
@@ -387,10 +518,11 @@ function tick(){
     label  = 'затмение завершено';
   }
 
-  const txt = fmtCountdown(remain);
-  const cs  = '.' + p2(splitMs(remain).c);
+  const txt  = fmtCountdown(remain);
+  const long = remain >= DAYS_FROM;         // сотые на таком отрыве только мешают
   if (ui.digits.textContent !== txt) ui.digits.textContent = txt;
-  ui.centis.textContent = cs;
+  ui.centis.textContent = long ? '' : '.' + p2(splitMs(remain).c);
+  ui.time.classList.toggle('long', long);
   if (ui.label.textContent !== label) ui.label.textContent = label;
 
   ui.sNow.textContent = fmtClock(t, true);
@@ -405,15 +537,16 @@ function tick(){
 
 function refreshStatic(){
   const { start, end } = window_();
-  ui.sStart.textContent = fmtClock(start);
-  ui.sEnd.textContent   = fmtClock(end);
+  ui.sStart.textContent = fmtClock(start) + fmtDayHint(start);
+  ui.sEnd.textContent   = fmtClock(end)   + fmtDayHint(end);
   ui.sDur.textContent   = fmtCountdown(end - start);
+  ui.sTz.textContent    = tzName(tzOffset(start));
   document.body.classList.toggle('test', !!test);
   phase = null;                            // пересчитать фазу в ближайшем кадре
 
-  const link = shareUrl(cfg.shareMode);
+  const link = shareUrl();
   el('inShare').value = link;
-  if (location.protocol !== 'file:'){      // адресная строка = готовая ссылка для друзей
+  if (cfg.configured && location.protocol !== 'file:'){   // адресная строка = готовая ссылка
     try { history.replaceState(null, '', link); } catch {}
   }
 }
@@ -438,11 +571,6 @@ el('btnFull').onclick = () => {
 
 applyUrlTimes();                           // до того, как поля заполнятся из cfg
 
-// ссылка для друзей
-const inShareMode = el('inShareMode');
-inShareMode.value = cfg.shareMode;
-inShareMode.onchange = () => { cfg.shareMode = inShareMode.value; save(); refreshStatic(); };
-
 el('btnCopy').onclick = async () => {
   const input = el('inShare'), btn = el('btnCopy');
   input.select(); input.setSelectionRange(0, 9999);
@@ -452,19 +580,78 @@ el('btnCopy').onclick = async () => {
   setTimeout(() => btn.textContent = 'Копировать', 1500);
 };
 
-if (fromLink) el('linkNote').innerHTML =
-  '⤴ Время взято из ссылки и показано по часам вашего устройства.';
+if (fromLink) el('linkNote').textContent = '⤴ Время взято из ссылки.';
 
-// поля времени
-const bind = (id, key) => {
-  const input = el(id);
-  input.value = cfg[key];
-  input.onchange = () => {
-    if (!input.value) { input.value = cfg[key]; return; }
-    cfg[key] = input.value; save(); refreshStatic();
+/* ---- поля времени: одни и те же значения в настройках и в окне первого запуска ---- */
+const FIELDS = [
+  ['inDate','date'], ['inStart','start'], ['inEnd','end'],
+  ['inSetupDate','date'], ['inSetupStart','start'], ['inSetupEnd','end'],
+];
+const ZONE_SELECTS = ['inTz','inSetupTz'];
+
+function fillZones(sel){
+  const opt = (v, text) => sel.add(new Option(text, v));
+  opt('local', `Как на устройстве (${tzName(localOffset(Date.now()))})`);
+  for (const [min, city] of ZONES) opt(String(min), `${tzName(min)} · ${city}`);
+  if (cfg.tz !== 'local' && !ZONES.some(z => z[0] === Number(cfg.tz)))
+    opt(String(cfg.tz), tzName(Number(cfg.tz)));          // нестандартный пояс из ссылки
+}
+
+function syncFields(){
+  for (const [id, key] of FIELDS) el(id).value = cfg[key];
+  for (const id of ZONE_SELECTS)  el(id).value = String(cfg.tz);
+}
+
+for (const [id, key] of FIELDS){
+  el(id).onchange = () => {
+    const v = el(id).value;
+    if (!v) { el(id).value = cfg[key]; return; }           // пустое поле не сохраняем
+    cfg[key] = v; save(); syncFields(); refreshStatic();
   };
+}
+for (const id of ZONE_SELECTS){
+  fillZones(el(id));
+  el(id).onchange = () => {
+    const v = el(id).value;
+    cfg.tz = v === 'local' ? 'local' : Number(v);
+    save(); syncFields(); refreshStatic();
+  };
+}
+syncFields();
+
+/* ---- окно первого запуска ---- */
+const setup = el('setup');
+let pastConfirmed = false;
+
+el('btnSetupGo').onclick = () => {
+  const warn = el('setupWarn');
+  const empty = ['inSetupDate','inSetupStart','inSetupEnd'].filter(id => !el(id).value);
+  if (empty.length){
+    warn.textContent = 'Заполните дату и время.';
+    warn.classList.add('show');
+    empty.forEach(id => el(id).style.borderColor = '#ff6a5c');
+    return;
+  }
+  if (realWindow().start < now() && !pastConfirmed){      // мягкая защита от прошедшей даты
+    pastConfirmed = true;
+    warn.textContent = 'Это время уже прошло — проверьте дату.';
+    warn.classList.add('show');
+    el('btnSetupGo').textContent = 'Всё равно начать';
+    return;
+  }
+  cfg.configured = true; save();
+  setup.classList.remove('open');
+  refreshStatic();
 };
-bind('inDate','date'); bind('inStart','start'); bind('inEnd','end');
+
+// правки полей снимают предупреждение
+setup.addEventListener('input', e => {
+  e.target.style.borderColor = '';
+  el('setupWarn').classList.remove('show');
+  pastConfirmed = false;
+  el('btnSetupGo').textContent = 'Начать отсчёт';
+});
+setup.addEventListener('keydown', e => { if (e.key === 'Enter') el('btnSetupGo').click(); });
 
 // тест
 function startTest(delaySec){
@@ -481,7 +668,8 @@ el('btnTestStop').onclick = stopTest;
 el('btnTest').onclick     = () => test ? stopTest() : startTest(Math.max(1, Number(el('inTestDelay').value) || 10));
 
 document.onkeydown = e => {
-  if (e.target.tagName === 'INPUT') return;
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+  if (setup.classList.contains('open')) return;
   const k = e.key.toLowerCase();
   if (k === 't') el('btnTest').click();
   else if (k === 's') el('btnSound').click();
@@ -508,6 +696,7 @@ const qTest = params().get('test');
 if (qTest !== null) startTest(Math.max(1, Number(qTest) || 10));
 
 el('btnSound').textContent = (cfg.sound ? '🔊' : '🔇') + ' Звук';
+if (!cfg.configured) setup.classList.add('open');   // первый запуск без параметров в ссылке
 refreshStatic();
 requestAnimationFrame(tick);
 </script>
